@@ -2,9 +2,8 @@ name: Build RecoverX APK
 
 on:
   push:
-    branches: ["main", "master"]
-  pull_request:
-    branches: ["main", "master"]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -12,62 +11,98 @@ permissions:
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build RecoverX Android APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Extract Android Source
+      - name: Inspect Repository
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          echo "=== ROOT ==="
+          ls -la
+
+          echo "=== FILES ==="
+          find . -maxdepth 3 -type f -print | sort
+
+      - name: Find Android Source ZIP
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP_FILE="$(find . -maxdepth 2 -type f -iname '*.zip' -print -quit)"
+          ZIP_FILE=$(find . -type f -iname "*.zip" -print -quit)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: File ZIP source Android tidak ditemukan."
+            echo "::error::Tidak ada file ZIP Android ditemukan."
             exit 1
           fi
 
-          echo "Menggunakan source: $ZIP_FILE"
+          echo "ZIP ditemukan:"
+          echo "$ZIP_FILE"
 
-          mkdir -p _android_source
-          unzip -q "$ZIP_FILE" -d _android_source
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-          PROJECT_DIR="$(find _android_source \
+      - name: Extract Android Project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf _recoverx_android
+          mkdir -p _recoverx_android
+
+          unzip -q "$ZIP_FILE" -d _recoverx_android
+
+          echo "=== HASIL EXTRACT ==="
+          find _recoverx_android -maxdepth 5 -type f -print | sort | head -300
+
+      - name: Locate Gradle Project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SETTINGS=$(find _recoverx_android \
             -type f \
-            -name 'settings.gradle.kts' \
-            -print -quit | xargs -r dirname)"
+            -name "settings.gradle.kts" \
+            -print -quit)
 
-          if [ -z "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/settings.gradle.kts" ]; then
-            echo "ERROR: settings.gradle.kts tidak ditemukan di dalam ZIP."
-            find _android_source -maxdepth 5 -type f | head -200
+          if [ -z "$SETTINGS" ]; then
+            echo "::error::settings.gradle.kts tidak ditemukan."
+
+            echo "File yang tersedia:"
+            find _recoverx_android -type f -print | sort | head -500
+
             exit 1
           fi
 
-          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERROR: app/build.gradle.kts tidak ditemukan."
-            find "$PROJECT_DIR" -maxdepth 3 -type f | sort
-            exit 1
-          fi
+          PROJECT_DIR=$(dirname "$SETTINGS")
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "================================"
           echo "Android project ditemukan:"
           echo "$PROJECT_DIR"
-          echo "================================"
 
-      - name: Setup Java 21
+          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "::error::app/build.gradle.kts tidak ditemukan."
+
+            echo "Struktur project:"
+            find "$PROJECT_DIR" -maxdepth 4 -type f -print | sort
+
+            exit 1
+          fi
+
+          echo "app/build.gradle.kts ditemukan."
+
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
-          cache: gradle
+          java-version: "17"
 
-      - name: Setup Gradle 8.4
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.4"
@@ -75,70 +110,79 @@ jobs:
       - name: Accept Android SDK Licenses
         shell: bash
         run: |
-          set +e
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses \
+            > /dev/null 2>&1 || true
 
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            --licenses > /dev/null 2>&1
-
-          exit 0
-
-      - name: Prepare Android SDK
+      - name: Show Gradle Project
+        working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -euo pipefail
 
-          SDK_VERSION="$(
-            grep -RhoE \
-            'compileSdk(List)?[[:space:]]*=[[:space:]]*[0-9]+' \
-            "$PROJECT_DIR" \
-            --include='*.gradle.kts' \
-            | grep -oE '[0-9]+' \
-            | head -1 || true
-          )"
+          echo "=== PROJECT ==="
+          pwd
 
-          if [ -n "$SDK_VERSION" ]; then
-            echo "Installing Android SDK platform $SDK_VERSION"
+          echo "=== FILES ==="
+          find . -maxdepth 3 -type f -print | sort
 
-            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-              "platforms;android-$SDK_VERSION" \
-              "platform-tools" > /dev/null
-          else
-            echo "compileSdk tidak terdeteksi."
-            echo "Melanjutkan dengan SDK runner."
-          fi
+          echo "=== GRADLE ==="
+          gradle --version
 
       - name: Generate Gradle Wrapper
         working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
         run: |
+          set -euo pipefail
+
           gradle wrapper \
             --gradle-version 8.4 \
             --distribution-type bin
 
           chmod +x gradlew
 
+          echo "Gradle wrapper berhasil dibuat."
+
       - name: Build Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
         run: |
+          set -o pipefail
+
           ./gradlew assembleDebug \
             --stacktrace \
+            --info \
             --no-daemon
 
       - name: Find APK
+        working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "APK hasil build:"
+          echo "=== APK HASIL BUILD ==="
 
-          find "$PROJECT_DIR" \
+          find app/build/outputs \
             -type f \
             -name "*.apk" \
             -print
 
-      - name: Upload Debug APK
+          APK=$(find app/build/outputs \
+            -type f \
+            -name "*.apk" \
+            -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "::error::APK tidak berhasil dibuat."
+            exit 1
+          fi
+
+          echo "APK ditemukan:"
+          echo "$APK"
+
+      - name: Upload RecoverX APK
         uses: actions/upload-artifact@v4
         with:
-          name: RecoverX-Android-Debug-APK
+          name: RecoverX-Debug-APK
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30

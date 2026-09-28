@@ -16,46 +16,61 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Ambil source code repositori
+      # 1. Checkout seluruh source code repositori
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Setup Java 21 JDK (Eclipse Temurin)
+      # 2. Setup Java 21 JDK (Temurin)
       - name: Set up Java 21 JDK
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      # 3. Setup Gradle Resmi (Menangani cache, JVM arguments, & dependencies)
+      # 3. Setup Gradle Environment
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      # 4. Terima Lisensi Resmi Android SDK
+      # 4. Terima Lisensi Android SDK
       - name: Accept Android SDK Licenses
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
 
-      # 5. Build Android Debug APK
-      - name: Build Android Debug APK
+      # 5. Cari otomatis direktori Gradle & jalankan Build APK
+      - name: Locate Gradle Root and Build Android APK
         run: |
-          # Masuk ke folder android jika ada
-          if [ -d "android" ]; then
-            cd android
+          echo "=== Mencari letak berkas project Gradle ==="
+          
+          # Cari lokasi file settings.gradle / settings.gradle.kts
+          GRADLE_SETTINGS_PATH=$(find . -name "settings.gradle.kts" -o -name "settings.gradle" | head -n 1)
+
+          if [ -z "$GRADLE_SETTINGS_PATH" ]; then
+            # Jika tidak ada settings.gradle, cari build.gradle
+            GRADLE_SETTINGS_PATH=$(find . -name "build.gradle.kts" -o -name "build.gradle" | head -n 1)
           fi
 
-          echo "Direktori build: $(pwd)"
-          chmod +x gradlew || true
+          if [ -n "$GRADLE_SETTINGS_PATH" ]; then
+            GRADLE_DIR=$(dirname "$GRADLE_SETTINGS_PATH")
+            echo "Ditemukan proyek Gradle di: $GRADLE_SETTINGS_PATH"
+            echo "Berpindah ke direktori: $GRADLE_DIR"
+            cd "$GRADLE_DIR"
+          else
+            echo "PERINGATAN: File Gradle tidak terdeteksi, berjalan di root."
+          fi
 
-          # Jika gradle-wrapper.jar belum ada di repositori, buat wrapper 8.4 resmi otomatis
-          if [ ! -f "gradlew" ] || [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            echo "Membuat Gradle Wrapper 8.4 lengkap..."
+          echo "Direktori kompilasi aktif: $(pwd)"
+          chmod +x gradlew 2>/dev/null || true
+
+          # Jalankan gradlew jika ada, jika belum buat wrapper 8.4
+          if [ -f "gradlew" ]; then
+            echo "Menjalankan ./gradlew bawaan..."
+            ./gradlew assembleDebug --stacktrace --no-daemon
+          else
+            echo "Membuat Gradle Wrapper 8.4..."
             gradle wrapper --gradle-version 8.4 --distribution-type bin
             chmod +x gradlew
+            ./gradlew assembleDebug --stacktrace --no-daemon
           fi
-
-          # Eksekusi build APK
-          ./gradlew assembleDebug --stacktrace --info --no-daemon
 
       # 6. Upload APK ke GitHub Artifacts
       - name: Upload Android Debug APK

@@ -1,4 +1,4 @@
-name: Build RecoverX Android APK (Full UI & Engine)
+name: Build RecoverX Android APK
 
 on:
   push:
@@ -12,218 +12,37 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build Full Android APK
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. Setup Node.js dan bangun seluruh UI RecoverX
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Build Web Application Assets
+      - name: Build Web Application
         run: |
           npm install --legacy-peer-deps
           npm run build
 
-      # 2. Setup Java 21 JDK
       - name: Setup Java 21 JDK
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      # 3. Accept Android SDK Licenses
-      - name: Accept Android Licenses
+      - name: Accept Android SDK Licenses
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
 
-      # 4. Siapkan Android Project dengan WebView Container UI Penuh
-      - name: Setup Android App Project
+      - name: Setup Android Project
         run: |
-          mkdir -p android/app/src/main/assets
-          mkdir -p android/app/src/main/java/com/recoverx/app
-          mkdir -p android/app/src/main/res/values
+          bash ./setup-android.sh
 
-          # Salin seluruh hasil build web ke aset aplikasi Android
-          cp -r dist/* android/app/src/main/assets/
-
-          # Settings Gradle
-          cat << 'EOF' > android/settings.gradle.kts
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-rootProject.name = "RecoverX"
-include(":app")
-EOF
-
-          # Root build.gradle.kts
-          cat << 'EOF' > android/build.gradle.kts
-plugins {
-    id("com.android.application") version "8.3.0" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.22" apply false
-}
-EOF
-
-          # gradle.properties
-          cat << 'EOF' > android/gradle.properties
-org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-android.useAndroidX=true
-android.nonTransitiveRClass=true
-kotlin.code.style=official
-EOF
-
-          # app/build.gradle.kts
-          cat << 'EOF' > android/app/build.gradle.kts
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-}
-
-android {
-    namespace = "com.recoverx.app"
-    compileSdk = 34
-
-    defaultConfig {
-        applicationId = "com.recoverx.app"
-        minSdk = 24
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
-    }
-
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-        }
-        debug {
-            applicationIdSuffix = ".debug"
-            isDebuggable = true
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-}
-
-dependencies {
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("androidx.webkit:webkit:1.10.0")
-}
-EOF
-
-          # AndroidManifest.xml
-          cat << 'EOF' > android/app/src/main/AndroidManifest.xml
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-
-    <application
-        android:allowBackup="true"
-        android:label="RecoverX"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.RecoverX">
-        <activity
-            android:name=".MainActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
-</manifest>
-EOF
-
-          # Tema Dark Theme
-          cat << 'EOF' > android/app/src/main/res/values/styles.xml
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.RecoverX" parent="Theme.AppCompat.NoActionBar">
-        <item name="android:statusBarColor">#020617</item>
-        <item name="android:windowBackground">#020617</item>
-    </style>
-</resources>
-EOF
-
-          # MainActivity.kt yang memuat UI RecoverX
-          cat << 'EOF' > android/app/src/main/java/com/recoverx/app/MainActivity.kt
-package com.recoverx.app
-
-import android.annotation.SuppressLint
-import android.os.Bundle
-import android.webkit.WebChromeClient
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.appcompat.app.AppCompatActivity
-
-class MainActivity : AppCompatActivity() {
-
-    private lateinit var webView: WebView
-
-    @SuppressLint("SetJavaScriptEnabled")
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        webView = WebView(this)
-        setContentView(webView)
-
-        val settings = webView.settings
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.databaseEnabled = true
-        settings.allowFileAccess = true
-        settings.allowContentAccess = true
-        settings.loadWithOverviewMode = true
-        settings.useWideViewPort = true
-        settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-
-        webView.webViewClient = WebViewClient()
-        webView.webChromeClient = WebChromeClient()
-
-        // Muat UI RecoverX
-        webView.loadUrl("file:///android_asset/index.html")
-    }
-
-    override fun onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack()
-        } else {
-            super.onBackPressed()
-        }
-    }
-}
-EOF
-
-      # 5. Build file APK
       - name: Build Android Debug APK
         run: |
           cd android
@@ -231,7 +50,6 @@ EOF
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace --no-daemon
 
-      # 6. Upload APK ke GitHub Artifacts
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:

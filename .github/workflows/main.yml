@@ -1,152 +1,48 @@
-name: Build RecoverX APK
+```yaml
+name: RecoverX Diagnostic
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
-  workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
-  build:
+  test:
+    name: Test GitHub Runner
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Check Repository
+      - name: Test Runner
         run: |
-          echo "=== ROOT ==="
+          echo "================================"
+          echo "RECOVERX RUNNER BERHASIL"
+          echo "================================"
+          echo "OS:"
+          uname -a
+
+          echo "USER:"
+          whoami
+
+          echo "DIRECTORY:"
           pwd
+
+          echo "FILES:"
           ls -la
 
-          echo "=== ZIP ==="
-          find . -type f -iname "*.zip" -print
+      - name: Test Checkout
+        uses: actions/checkout@v4
 
-      - name: Find Source ZIP
-        shell: bash
+      - name: Test Repository
         run: |
-          set -e
+          echo "================================"
+          echo "CHECKOUT BERHASIL"
+          echo "================================"
 
-          ZIP_FILE="$(find . -type f -iname "*.zip" -print -quit)"
+          echo "Repository:"
+          ls -la
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "::error::File ZIP RecoverX tidak ditemukan."
-            exit 1
-          fi
-
-          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-          echo "Source ZIP: $ZIP_FILE"
-
-      - name: Extract RecoverX
-        shell: bash
-        run: |
-          set -e
-
-          rm -rf recoverx_source
-          mkdir -p recoverx_source
-
-          unzip -q "$ZIP_FILE" -d recoverx_source
-
-          echo "=== EXTRACTED FILES ==="
-          find recoverx_source -maxdepth 5 -type f -print | sort | head -300
-
-      - name: Find Android Project
-        shell: bash
-        run: |
-          set -e
-
-          SETTINGS_FILE="$(find recoverx_source \
-            -type f \
-            -name "settings.gradle.kts" \
-            -print -quit)"
-
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "::error::settings.gradle.kts tidak ditemukan."
-
-            echo "Isi source:"
-            find recoverx_source -type f -print | sort | head -500
-
-            exit 1
-          fi
-
-          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
-
-          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "::error::app/build.gradle.kts tidak ditemukan."
-
-            find "$PROJECT_DIR" -maxdepth 4 -type f -print | sort
-
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo "Android project:"
-          echo "$PROJECT_DIR"
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.4"
-
-      - name: Accept Android Licenses
-        run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses \
-            > /dev/null 2>&1 || true
-
-      - name: Generate Gradle Wrapper
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          gradle wrapper \
-            --gradle-version 8.4 \
-            --distribution-type bin
-
-          chmod +x gradlew
-
-      - name: Build APK
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          ./gradlew assembleDebug \
-            --stacktrace \
-            --no-daemon
-
-      - name: Verify APK
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          echo "=== APK ==="
-
-          find app/build/outputs \
-            -type f \
-            -name "*.apk" \
-            -print
-
-          APK="$(find app/build/outputs \
-            -type f \
-            -name "*.apk" \
-            -print -quit)"
-
-          if [ -z "$APK" ]; then
-            echo "::error::APK tidak ditemukan."
-            exit 1
-          fi
-
-          echo "BUILD BERHASIL:"
-          echo "$APK"
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: RecoverX-Debug-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 30
+          echo ""
+          echo "ZIP FILE:"
+          find . -maxdepth 3 -type f -iname "*.zip" -print
+```

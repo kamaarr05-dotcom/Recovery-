@@ -1,4 +1,4 @@
-name: Build RecoverX Android APK & Web App
+name: Build RecoverX Android APK (Java 21)
 
 on:
   push:
@@ -11,66 +11,58 @@ permissions:
   contents: write
 
 jobs:
-  build-and-package:
-    name: Build Android APK (Java 21) & Web App (Node 20)
+  build-apk:
+    name: Build Android APK (Java 21)
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repository source code
+      # 1. Ambil source code repositori
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js 20 environment (tanpa cache lockfile agar tidak error)
-      - name: Set up Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      # 3. Install NPM dependencies & build Web
-      - name: Install NPM Dependencies & Build Web
+      # 2. Diagnostik file di runner
+      - name: List Repository Structure
         run: |
-          npm install --legacy-peer-deps
-          npm run build
+          echo "=== Root Files ==="
+          ls -la
+          echo "=== Mencari file build.gradle / settings.gradle ==="
+          find . -maxdepth 3 -name "build.gradle*" -o -name "settings.gradle*"
 
-      # 4. Setup Java 21 JDK (Temurin)
+      # 3. Pasang Java 21 JDK (Eclipse Temurin)
       - name: Set up Java 21 JDK
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      # 5. Setup Android SDK
+      # 4. Pasang Android SDK
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # 6. Pastikan Gradle Wrapper siap
-      - name: Prepare Gradle Wrapper
-        working-directory: ./android
+      # 5. Build Android Debug APK
+      - name: Build Android Debug APK
         run: |
+          # Jika project berada di dalam subfolder android/, masuk ke folder tersebut
+          if [ -d "android" ]; then
+            cd android
+          fi
+
+          echo "Direktori kompilasi: $(pwd)"
+
+          # Jika gradlew belum ada, buat wrapper secara otomatis
           if [ ! -f "gradlew" ]; then
+            echo "Membuat Gradle Wrapper 8.4..."
             gradle wrapper --gradle-version 8.4
           fi
-          chmod +x gradlew
 
-      # 7. Kompilasi Android Debug APK
-      - name: Build Android Debug APK
-        working-directory: ./android
-        run: |
+          chmod +x gradlew
           ./gradlew assembleDebug --stacktrace --no-daemon
 
-      # 8. Upload File APK ke Artifacts
+      # 6. Upload APK hasil build ke Artifacts GitHub
       - name: Upload Android Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: RecoverX-Android-Debug-APK
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: "**/build/outputs/apk/debug/*.apk"
           if-no-files-found: error
-          retention-days: 30
-
-      # 9. Upload Web Application Build
-      - name: Upload Web Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: RecoverX-Web-Dist
-          path: dist/
           retention-days: 30

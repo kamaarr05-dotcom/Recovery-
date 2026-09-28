@@ -19,27 +19,46 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Verify Android Project
+      - name: Extract Android Source
+        shell: bash
         run: |
-          echo "Checking Android project..."
+          set -euo pipefail
 
-          if [ ! -d "android" ]; then
-            echo "ERROR: Folder android tidak ditemukan."
-            echo "Pastikan folder android/ sudah di-push ke repository GitHub."
+          ZIP_FILE="$(find . -maxdepth 2 -type f -iname '*.zip' -print -quit)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: File ZIP source Android tidak ditemukan."
             exit 1
           fi
 
-          if [ ! -f "android/settings.gradle.kts" ]; then
-            echo "ERROR: android/settings.gradle.kts tidak ditemukan."
+          echo "Menggunakan source: $ZIP_FILE"
+
+          mkdir -p _android_source
+          unzip -q "$ZIP_FILE" -d _android_source
+
+          PROJECT_DIR="$(find _android_source \
+            -type f \
+            -name 'settings.gradle.kts' \
+            -print -quit | xargs -r dirname)"
+
+          if [ -z "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/settings.gradle.kts" ]; then
+            echo "ERROR: settings.gradle.kts tidak ditemukan di dalam ZIP."
+            find _android_source -maxdepth 5 -type f | head -200
             exit 1
           fi
 
-          if [ ! -f "android/app/build.gradle.kts" ]; then
-            echo "ERROR: android/app/build.gradle.kts tidak ditemukan."
+          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERROR: app/build.gradle.kts tidak ditemukan."
+            find "$PROJECT_DIR" -maxdepth 3 -type f | sort
             exit 1
           fi
 
-          echo "Android project ditemukan."
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "================================"
+          echo "Android project ditemukan:"
+          echo "$PROJECT_DIR"
+          echo "================================"
 
       - name: Setup Java 21
         uses: actions/setup-java@v4
@@ -54,12 +73,42 @@ jobs:
           gradle-version: "8.4"
 
       - name: Accept Android SDK Licenses
+        shell: bash
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses \
-            > /dev/null 2>&1 || true
+          set +e
+
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            --licenses > /dev/null 2>&1
+
+          exit 0
+
+      - name: Prepare Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SDK_VERSION="$(
+            grep -RhoE \
+            'compileSdk(List)?[[:space:]]*=[[:space:]]*[0-9]+' \
+            "$PROJECT_DIR" \
+            --include='*.gradle.kts' \
+            | grep -oE '[0-9]+' \
+            | head -1 || true
+          )"
+
+          if [ -n "$SDK_VERSION" ]; then
+            echo "Installing Android SDK platform $SDK_VERSION"
+
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+              "platforms;android-$SDK_VERSION" \
+              "platform-tools" > /dev/null
+          else
+            echo "compileSdk tidak terdeteksi."
+            echo "Melanjutkan dengan SDK runner."
+          fi
 
       - name: Generate Gradle Wrapper
-        working-directory: android
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           gradle wrapper \
             --gradle-version 8.4 \
@@ -68,16 +117,28 @@ jobs:
           chmod +x gradlew
 
       - name: Build Debug APK
-        working-directory: android
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           ./gradlew assembleDebug \
             --stacktrace \
             --no-daemon
 
+      - name: Find APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "APK hasil build:"
+
+          find "$PROJECT_DIR" \
+            -type f \
+            -name "*.apk" \
+            -print
+
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: RecoverX-Android-Debug-APK
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30

@@ -1,4 +1,4 @@
-name: Build RecoverX Android APK (Java 21)
+name: Build RecoverX Android APK
 
 on:
   push:
@@ -12,205 +12,55 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build Android APK (Java 21)
+    name: Build APK
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repository source code
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Diagnostik file di runner GitHub
-      - name: Inspect Files
-        run: |
-          echo "=== Root Files di GitHub ==="
-          ls -la
-          echo "=== Struktur folder ==="
-          find . -maxdepth 3 -not -path '*/.*'
-
-      # 3. Setup Java 21 JDK (Temurin)
-      - name: Set up Java 21 JDK
+      - name: Setup Java 21 JDK
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      # 4. Terima Lisensi Android SDK
-      - name: Accept Android SDK Licenses
+      - name: Accept Android Licenses
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
 
-      # 5. Siapkan proyek Android (Otomatis generate jika repo belum menyertakan berkas Gradle)
-      - name: Setup Android Project Files & Build APK
+      - name: Setup Android Project
         run: |
-          SETTINGS_FILE=$(find . -name "settings.gradle.kts" -o -name "settings.gradle" | head -n 1)
+          mkdir -p android/app/src/main/java/com/recoverx/app
+          mkdir -p android/gradle/wrapper
 
-          if [ -n "$SETTINGS_FILE" ]; then
-            TARGET_DIR=$(dirname "$SETTINGS_FILE")
-            echo "Ditemukan proyek Android di $TARGET_DIR"
-            cd "$TARGET_DIR"
-          else
-            echo "Menyiapkan berkas proyek Android RecoverX lengkap..."
-            mkdir -p android/app/src/main/java/com/recoverx/app
-            mkdir -p android/gradle/wrapper
+          echo 'pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }' > android/settings.gradle.kts
+          echo 'dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }' >> android/settings.gradle.kts
+          echo 'rootProject.name = "RecoverX"' >> android/settings.gradle.kts
+          echo 'include(":app")' >> android/settings.gradle.kts
 
-            # Buat settings.gradle.kts
-            cat << 'EOF' > android/settings.gradle.kts
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-rootProject.name = "RecoverX"
-include(":app")
-EOF
+          echo 'plugins { id("com.android.application") version "8.3.0" apply false; id("org.jetbrains.kotlin.android") version "1.9.22" apply false }' > android/build.gradle.kts
 
-            # Buat root build.gradle.kts
-            cat << 'EOF' > android/build.gradle.kts
-plugins {
-    id("com.android.application") version "8.3.0" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.22" apply false
-}
-EOF
+          echo 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' > android/gradle.properties
+          echo 'android.useAndroidX=true' >> android/gradle.properties
+          echo 'android.nonTransitiveRClass=true' >> android/gradle.properties
 
-            # Buat gradle.properties
-            cat << 'EOF' > android/gradle.properties
-org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-android.useAndroidX=true
-android.nonTransitiveRClass=true
-kotlin.code.style=official
-EOF
+          echo 'plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }' > android/app/build.gradle.kts
+          echo 'android { namespace = "com.recoverx.app"; compileSdk = 34; defaultConfig { applicationId = "com.recoverx.app"; minSdk = 26; targetSdk = 34; versionCode = 1; versionName = "1.0" }; compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }; kotlinOptions { jvmTarget = "17" } }' >> android/app/build.gradle.kts
+          echo 'dependencies { implementation("androidx.core:core-ktx:1.12.0"); implementation("androidx.appcompat:appcompat:1.6.1") }' >> android/app/build.gradle.kts
 
-            # Buat app/build.gradle.kts
-            cat << 'EOF' > android/app/build.gradle.kts
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-}
+          echo '<?xml version="1.0" encoding="utf-8"?><manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:label="RecoverX"><activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity></application></manifest>' > android/app/src/main/AndroidManifest.xml
 
-android {
-    namespace = "com.recoverx.app"
-    compileSdk = 34
+          echo 'package com.recoverx.app; import android.app.Activity; import android.os.Bundle; public class MainActivity extends Activity { @Override protected void onCreate(Bundle savedInstanceState) { super.onCreate(savedInstanceState); } }' > android/app/src/main/java/com/recoverx/app/MainActivity.java
 
-    defaultConfig {
-        applicationId = "com.recoverx.app"
-        minSdk = 26
-        targetSdk = 34
-        versionCode = 100
-        versionName = "1.0.0"
-        vectorDrawables {
-            useSupportLibrary = true
-        }
-    }
-
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-        }
-        debug {
-            applicationIdSuffix = ".debug"
-            isDebuggable = true
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
-    buildFeatures {
-        compose = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
-    }
-}
-
-dependencies {
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.activity:activity-compose:1.8.2")
-    implementation(platform("androidx.compose:compose-bom:2024.02.01"))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-}
-EOF
-
-            # Buat AndroidManifest.xml
-            mkdir -p android/app/src/main
-            cat << 'EOF' > android/app/src/main/AndroidManifest.xml
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application
-        android:allowBackup="true"
-        android:label="RecoverX"
-        android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
-</manifest>
-EOF
-
-            # Buat MainActivity.kt
-            cat << 'EOF' > android/app/src/main/java/com/recoverx/app/MainActivity.kt
-package com.recoverx.app
-
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.material3.Text
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            MaterialTheme {
-                Surface {
-                    Text(text = "RecoverX Native Android Running")
-                }
-            }
-        }
-    }
-}
-EOF
-
-            cd android
-          fi
-
-          echo "Membuat Gradle Wrapper 8.4 resmi..."
+      - name: Build Debug APK
+        run: |
+          cd android
           gradle wrapper --gradle-version 8.4 --distribution-type bin
           chmod +x gradlew
-
-          echo "Menjalankan kompilasi APK..."
           ./gradlew assembleDebug --stacktrace --no-daemon
 
-      # 6. Upload APK ke GitHub Artifacts
-      - name: Upload Android Debug APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: RecoverX-Android-Debug-APK

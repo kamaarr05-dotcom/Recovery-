@@ -20,17 +20,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js 20 environment
+      # 2. Setup Node.js 20 environment (tanpa cache lockfile agar tidak error)
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       # 3. Install NPM dependencies & build Web
       - name: Install NPM Dependencies & Build Web
         run: |
-          npm ci || npm install
+          npm install --legacy-peer-deps
           npm run build
 
       # 4. Setup Java 21 JDK (Temurin)
@@ -39,13 +38,12 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-          cache: 'gradle'
 
       # 5. Setup Android SDK
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # 6. Pastikan Gradle Wrapper siap dieksekusi
+      # 6. Pastikan Gradle Wrapper siap
       - name: Prepare Gradle Wrapper
         working-directory: ./android
         run: |
@@ -60,7 +58,7 @@ jobs:
         run: |
           ./gradlew assembleDebug --stacktrace --no-daemon
 
-      # 8. Upload File APK ke GitHub Artifacts
+      # 8. Upload File APK ke Artifacts
       - name: Upload Android Debug APK
         uses: actions/upload-artifact@v4
         with:
